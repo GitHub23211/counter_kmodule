@@ -15,13 +15,12 @@ int dev_rel(struct inode* inde, struct file* fle);
 ssize_t dev_read(struct file *filp, char __user *buff, size_t count, loff_t *offp);
 ssize_t dev_write(struct file *filp, const char __user *buff, size_t count, loff_t *offp);
 
-static int times = 1;
 dev_t dev;
 int minor_num = 0;
 int dev_count = 5;
+char* kern_mem = NULL;
 int err = 0;
-void* kern_mem;
-int value_buf[255];
+int res = 0;
 
 struct counter_dev {
     struct cdev cdev;
@@ -37,7 +36,6 @@ struct file_operations fops = {
 
 struct counter_dev devs;
 struct class* dev_class;
-module_param(times, int, S_IRUGO);
 
 static int hello_init(void) {
     if(alloc_chrdev_region(&dev, minor_num, dev_count, "counter") < 0) {
@@ -59,7 +57,7 @@ static int hello_init(void) {
     dev_class = class_create(THIS_MODULE, "counter");
     for(int i = 0; i < dev_count; i++) {
         device_create(dev_class, NULL, MKDEV(MAJOR(dev), MINOR(dev) + i), NULL, "counter%d", i);
-        printk(KERN_ALERT "MAJOR %d, MINOR %d\n", MAJOR(dev), MINOR(dev) + i);
+        printk(KERN_NOTICE "MAJOR %d, MINOR %d\n", MAJOR(dev), MINOR(dev) + i);
     }
     return 0;
 }
@@ -75,34 +73,40 @@ static void hello_exit(void) {
 }
 
 int dev_open(struct inode* inde, struct file* fle) {
-    if((kern_mem = kmalloc(255, GFP_KERNEL)) == 0) {
+    printk(KERN_NOTICE "dev_open\n");
+    if((kern_mem = kmalloc(8, GFP_KERNEL)) == NULL) {
         printk(KERN_ALERT "Couldn't allocate memory in kernel\n");
         return -1;
     }
-    printk(KERN_NOTICE "dev_open\n");
     return 0;
 }
 
 ssize_t dev_write(struct file* filp, const char __user* buff, size_t count, loff_t* offp) {
-    printk(KERN_NOTICE "dev_write\n");
+    if(count >= 8) {
+        printk(KERN_ALERT "writing too many characters to device. Aborting... %s\n", kern_mem);
+        return -1;
+    }
     copy_from_user(kern_mem, buff, count);
-    printk(KERN_NOTICE "kern_mem %s\n", (char *) kern_mem);
+    res = *kern_mem;
+    printk(KERN_NOTICE "dev_write %s, res: %d\n", kern_mem, res);
     return count;
 }
 
-
 ssize_t dev_read(struct file* filp, char __user* buff, size_t count, loff_t* offp) {
-    printk(KERN_NOTICE "dev_read\n");
-    snprintf(kern_mem, 255, "%s snprintf", (char*) buff);
-    copy_to_user(buff, kern_mem, 255);
-    printk(KERN_NOTICE "read buffer %s\n", buff);
+    printk(KERN_NOTICE "dev_read %s\n", buff);
+    copy_to_user(buff, &res, sizeof(int));
+    if(res > 0) {
+        res = res - 1;
+    }
     return count;
 }
 
 int dev_rel(struct inode* inde, struct file* fle) {
     printk(KERN_NOTICE "dev_rel\n");
     kfree(kern_mem);
+    kern_mem = NULL;
     return 0;
 }
+
 module_init(hello_init);
 module_exit(hello_exit);
