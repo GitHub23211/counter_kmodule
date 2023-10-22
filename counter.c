@@ -5,15 +5,23 @@
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
+#include <linux/ioctl.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Your name and email address here");
 MODULE_DESCRIPTION("Comp2291 Counter driver.");
 
+#define uint8_t unsigned char
+#define DEV_IOC_MAGIC 0x5b
+#define DEV_IOC_RST _IO(DEV_IOC_MAGIC, 0)
+#define DEV_IOC_GET _IOR(DEV_IOC_MAGIC, 1, uint8_t*)
+#define DEV_IOC_MOD _IOW(DEV_IOC_MAGIC, 2, uint8_t*)
+
 int dev_open(struct inode* inde, struct file* fle);
 int dev_rel(struct inode* inde, struct file* fle);
 ssize_t dev_read(struct file *filp, char __user *buff, size_t count, loff_t *offp);
 ssize_t dev_write(struct file *filp, const char __user *buff, size_t count, loff_t *offp);
+static long ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 dev_t dev;
 int minor_num = 0;
@@ -21,6 +29,8 @@ int dev_count = 5;
 char* kern_mem = NULL;
 int err = 0;
 int res = 0;
+int modulus = 255; //Hexadecimal natural maximum
+int alloc_mem = 8; //in bytes
 
 struct counter_dev {
     struct cdev cdev;
@@ -31,11 +41,35 @@ struct file_operations fops = {
     open: dev_open,
     release: dev_rel,
     read: dev_read,
-    write: dev_write
+    write: dev_write,
+    unlocked_ioctl: ioctl
 };
 
 struct counter_dev devs;
 struct class* dev_class;
+
+static long ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
+    switch(cmd) {
+        case DEV_IOC_GET:
+            copy_to_user((uint8_t*) arg, &res, sizeof(uint8_t));
+            break;
+        case DEV_IOC_MOD:
+            char* temp = kmalloc(sizeof(uint8_t), GFP_KERNEL);
+            copy_from_user(temp, (uint8_t*) arg, sizeof(uint8_t));
+            modulus = *temp;
+            printk(KERN_NOTICE "new modulus: %d\n", modulus);
+            kfree(temp);
+            break;
+        case DEV_IOC_RST:
+            res = 0;
+            modulus = 255;
+            break;
+        default:
+            printk(KERN_NOTICE "ran ioctl method");
+            break;
+    }
+    return 0;
+}
 
 static int hello_init(void) {
     if(alloc_chrdev_region(&dev, minor_num, dev_count, "counter") < 0) {
@@ -74,7 +108,7 @@ static void hello_exit(void) {
 
 int dev_open(struct inode* inde, struct file* fle) {
     printk(KERN_NOTICE "dev_open\n");
-    if((kern_mem = kmalloc(8, GFP_KERNEL)) == NULL) {
+    if((kern_mem = kmalloc(alloc_mem, GFP_KERNEL)) == NULL) {
         printk(KERN_ALERT "Couldn't allocate memory in kernel\n");
         return -1;
     }
@@ -82,12 +116,16 @@ int dev_open(struct inode* inde, struct file* fle) {
 }
 
 ssize_t dev_write(struct file* filp, const char __user* buff, size_t count, loff_t* offp) {
-    if(count >= 8) {
+    if(count >= alloc_mem) {
         printk(KERN_ALERT "writing too many characters to device. Aborting... %s\n", kern_mem);
         return -1;
     }
     copy_from_user(kern_mem, buff, count);
     res = *kern_mem;
+    if(res > modulus) {
+        printk(KERN_ALERT "Value is greater than modulus. Aborting... %d\n", res);
+        return -1;
+    }
     printk(KERN_NOTICE "dev_write %s, res: %d\n", kern_mem, res);
     return count;
 }
