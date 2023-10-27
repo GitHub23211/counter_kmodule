@@ -52,41 +52,6 @@ struct file_operations fops = {
 struct counter_dev devs;
 struct class* dev_class;
 
-static long ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
-    switch(cmd) {
-        case DEV_IOC_GET:
-            if(copy_to_user((uint8_t*) arg, &res, sizeof(uint8_t)) != 0) {
-                pr_notice("Could not copy data from kernel space to user space");
-                break;
-            }
-            pr_debug("%s%d: DEV_IOC_GET: %d\n", device_name, MINOR(dev), res);
-            break;
-        case DEV_IOC_MOD:
-            char* temp = kmalloc(sizeof(uint8_t), GFP_KERNEL);
-            if(copy_from_user(temp, (uint8_t*) arg, sizeof(uint8_t)) != 0) {
-                pr_notice("Could not copy data from user space to kernel space");
-                break;
-            }
-            if(temp) {
-                modulus = *temp;
-                pr_debug("%s%d: DEV_IOC_MOD: %d\n", device_name, MINOR(dev), modulus);
-                break;
-            }
-            pr_notice("%s%d: DEV_IOC_MOD: error\n", device_name, MINOR(dev));
-            kfree(temp);
-            break;
-        case DEV_IOC_RST:
-            res = 0;
-            modulus = 255;
-            pr_debug("%s%d: DEV_IOC_RST\n", device_name, MINOR(dev));
-            break;
-        default:
-            pr_notice("%s%d: DEV_IOC_ERR\n", device_name, MINOR(dev));
-            break;
-    }
-    return 0;
-}
-
 static int hello_init(void) {
     int alloc_err;
     int cdev_add_err;
@@ -178,6 +143,42 @@ int dev_rel(struct inode* inde, struct file* fle) {
     kern_mem = NULL;
     return 0;
 }
+
+static long ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
+    switch(cmd) {
+        case DEV_IOC_GET:
+            if(copy_to_user((uint8_t*) arg, &res, sizeof(uint8_t)) != 0) {
+                pr_notice("Could not copy data from kernel space to user space");
+                break;
+            }
+            pr_debug("%s%d: DEV_IOC_GET: %d\n", device_name, MINOR(dev), res);
+            break;
+        case DEV_IOC_MOD:
+            char* temp = kmalloc(sizeof(uint8_t), GFP_KERNEL);
+            if(copy_from_user(temp, (uint8_t*) arg, sizeof(uint8_t)) != 0) {
+                pr_notice("Could not copy data from user space to kernel space");
+                break;
+            }
+            if(temp) {
+                modulus = *temp;
+                pr_debug("%s%d: DEV_IOC_MOD: %d\n", device_name, MINOR(dev), modulus);
+                break;
+            }
+            pr_notice("%s%d: DEV_IOC_MOD: error\n", device_name, MINOR(dev));
+            kfree(temp);
+            break;
+        case DEV_IOC_RST:
+            res = 0;
+            modulus = 255;
+            pr_debug("%s%d: DEV_IOC_RST\n", device_name, MINOR(dev));
+            break;
+        default:
+            pr_notice("%s%d: DEV_IOC_ERR\n", device_name, MINOR(dev));
+            break;
+    }
+    return 0;
+}
+
 
 module_init(hello_init);
 module_exit(hello_exit);
