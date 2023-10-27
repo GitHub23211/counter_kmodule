@@ -32,6 +32,8 @@ int res = 0;
 int modulus = 255; //1 byte
 int alloc_mem = 8; //in bytes
 
+static int major_num = -1;
+module_param(major_num, int, S_IRUGO);
 
 struct counter_dev {
     struct cdev cdev;
@@ -88,9 +90,19 @@ static int hello_init(void) {
     int alloc_err;
     int cdev_add_err;
 
-    if((alloc_err = alloc_chrdev_region(&dev, minor_start_num, minor_count, device_name)) != 0) {
-        pr_notice("Error %d: Cannot allocate major number...\n", alloc_err);
-        return -1;
+
+    if(major_num == -1) {
+        if((alloc_err = alloc_chrdev_region(&dev, minor_start_num, minor_count, device_name)) != 0) {
+            pr_notice("Error %d: Cannot allocate major number...\n", alloc_err);
+            return -1;
+        }
+    }
+    else {
+        dev = MKDEV(major_num, minor_start_num);
+        if((alloc_err = register_chrdev_region(dev, minor_count, device_name)) != 0) {
+            pr_notice("Error %d: Cannot allocate major number...\n", alloc_err);
+            return -1;
+        }
     }
 
     pr_info("Device %s inserted\n", device_name);
