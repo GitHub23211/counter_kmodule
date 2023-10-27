@@ -25,15 +25,16 @@ static long ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 dev_t dev;
 char* device_name = "counter";
-int minor_start_num = 0;
-int minor_count = 5;
 char* kern_mem = NULL;
 int res = 0;
 int modulus = 255; //1 byte
 int alloc_mem = 8; //in bytes
 
+int minor_start_num = 0;
 static int major_num = -1;
+static int minor_count = 5;
 module_param(major_num, int, S_IRUGO);
+module_param(minor_count, int, S_IRUGO);
 
 struct counter_dev {
     struct cdev cdev;
