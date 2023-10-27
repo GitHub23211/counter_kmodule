@@ -24,13 +24,14 @@ ssize_t dev_write(struct file *filp, const char __user *buff, size_t count, loff
 static long ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
 dev_t dev;
-int minor_num = 0;
-int dev_count = 5;
+char* device_name = "counter";
+int minor_start_num = 0;
+int minor_count = 5;
 char* kern_mem = NULL;
-int err = 0;
 int res = 0;
-int modulus = 255; //Hexadecimal natural maximum
+int modulus = 255; //1 byte
 int alloc_mem = 8; //in bytes
+
 
 struct counter_dev {
     struct cdev cdev;
@@ -51,65 +52,78 @@ struct class* dev_class;
 static long ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
     switch(cmd) {
         case DEV_IOC_GET:
-            copy_to_user((uint8_t*) arg, &res, sizeof(uint8_t));
+            if(copy_to_user((uint8_t*) arg, &res, sizeof(uint8_t)) != 0) {
+                pr_notice("Could not copy data from kernel space to user space");
+                break;
+            }
+            pr_debug("%s%d: DEV_IOC_GET: %d\n", device_name, MINOR(dev), res);
             break;
         case DEV_IOC_MOD:
             char* temp = kmalloc(sizeof(uint8_t), GFP_KERNEL);
-            copy_from_user(temp, (uint8_t*) arg, sizeof(uint8_t));
-            modulus = *temp;
-            printk(KERN_NOTICE "new modulus: %d\n", modulus);
+            if(copy_from_user(temp, (uint8_t*) arg, sizeof(uint8_t)) != 0) {
+                pr_notice("Could not copy data from user space to kernel space");
+                break;
+            }
+            if(temp) {
+                modulus = *temp;
+                pr_debug("%s%d: DEV_IOC_MOD: %d\n", device_name, MINOR(dev), modulus);
+                break;
+            }
+            pr_notice("%s%d: DEV_IOC_MOD: error\n", device_name, MINOR(dev));
             kfree(temp);
             break;
         case DEV_IOC_RST:
             res = 0;
             modulus = 255;
+            pr_debug("%s%d: DEV_IOC_RST\n", device_name, MINOR(dev));
             break;
         default:
-            printk(KERN_NOTICE "ran ioctl method");
+            pr_notice("%s%d: DEV_IOC_ERR\n", device_name, MINOR(dev));
             break;
     }
     return 0;
 }
 
 static int hello_init(void) {
-    if(alloc_chrdev_region(&dev, minor_num, dev_count, "counter") < 0) {
-        printk(KERN_NOTICE "Cannot allocate major number...\n");
+    int alloc_err;
+    int cdev_add_err;
+
+    if((alloc_err = alloc_chrdev_region(&dev, minor_start_num, minor_count, device_name)) != 0) {
+        pr_notice("Error %d: Cannot allocate major number...\n", alloc_err);
+        return -1;
     }
+
+    pr_info("Device %s inserted\n", device_name);
 
     cdev_init(&(devs.cdev), &fops);
     devs.cdev.owner = THIS_MODULE;
     devs.cdev.ops = &fops;
+    dev_class = class_create(THIS_MODULE, device_name);
 
-    for(int i = 0; i < dev_count; i++) {
-        err = cdev_add (&(devs.cdev), MKDEV(MAJOR(dev), MINOR(dev) + i), 1);
-        /* Fail gracefully if need be */
-       if (err) {
-        printk(KERN_NOTICE "Error %d adding counter%d", err, i);
+    for(int i = 0; i < minor_count; i++) {
+        cdev_add_err = cdev_add(&(devs.cdev), MKDEV(MAJOR(dev), MINOR(dev) + i), 1);
+        if (cdev_add_err) {
+            pr_notice("Error %d adding %s%d\n", cdev_add_err, device_name, MINOR(dev));
         }
-    }
-
-    dev_class = class_create(THIS_MODULE, "counter");
-    for(int i = 0; i < dev_count; i++) {
-        device_create(dev_class, NULL, MKDEV(MAJOR(dev), MINOR(dev) + i), NULL, "counter%d", i);
-        printk(KERN_NOTICE "MAJOR %d, MINOR %d\n", MAJOR(dev), MINOR(dev) + i);
+        device_create(dev_class, NULL, MKDEV(MAJOR(dev), MINOR(dev) + i), NULL, "%s%d", device_name, i);
+        pr_notice("MAJOR %d, MINOR %d\n", MAJOR(dev), MINOR(dev) + i);
     }
     return 0;
 }
 
 static void hello_exit(void) {
-    for(int i = 0; i < dev_count; i++) {
+    for(int i = 0; i < minor_count; i++) {
         device_destroy(dev_class, MKDEV(MAJOR(dev), MINOR(dev) + i));
     }
     class_destroy(dev_class);
     cdev_del(&(devs.cdev));
-    unregister_chrdev_region(dev, dev_count);
-    printk(KERN_ALERT "Goodbye word \n");
+    unregister_chrdev_region(dev, minor_count);
+    pr_info("Device %s removed\n", device_name);
 }
 
 int dev_open(struct inode* inde, struct file* fle) {
-    printk(KERN_NOTICE "dev_open\n");
     if((kern_mem = kmalloc(alloc_mem, GFP_KERNEL)) == NULL) {
-        printk(KERN_ALERT "Couldn't allocate memory in kernel\n");
+        pr_notice("Couldn't allocate memory in kernel\n");
         return -1;
     }
     return 0;
@@ -117,30 +131,36 @@ int dev_open(struct inode* inde, struct file* fle) {
 
 ssize_t dev_write(struct file* filp, const char __user* buff, size_t count, loff_t* offp) {
     if(count >= alloc_mem) {
-        printk(KERN_ALERT "writing too many characters to device. Aborting... %s\n", kern_mem);
+        pr_notice("Bytes to write: %lu > allocated memory: %d bytes Aborting...\n", count, alloc_mem);
         return -1;
     }
-    copy_from_user(kern_mem, buff, count);
-    res = *kern_mem;
-    if(res > modulus) {
-        printk(KERN_ALERT "Value is greater than modulus. Aborting... %d\n", res);
+    if(copy_from_user(kern_mem, buff, count) != 0) {
+        pr_notice("Could not copy data from user space to kernel space");
         return -1;
     }
-    printk(KERN_NOTICE "dev_write %s, res: %d\n", kern_mem, res);
+
+    if((int) (*kern_mem) > modulus) {
+        pr_notice("%s%d: overflow %d > %d\n", device_name, MINOR(dev), res, modulus);
+        return -1;
+    }
+    res = (int) *kern_mem;
+    pr_debug("%s%d: wrote %ld\n", device_name, MINOR(dev), count);
     return count;
 }
 
 ssize_t dev_read(struct file* filp, char __user* buff, size_t count, loff_t* offp) {
-    printk(KERN_NOTICE "dev_read %s\n", buff);
-    copy_to_user(buff, &res, sizeof(int));
+    if(copy_to_user(buff, &res, sizeof(int)) != 0) {
+        pr_notice("Could not copy data from kernel space to user space");
+        return -1;
+    }
     if(res > 0) {
         res = res - 1;
     }
+    pr_debug("%s%d: read %ld\n", device_name, MINOR(dev), count);
     return count;
 }
 
 int dev_rel(struct inode* inde, struct file* fle) {
-    printk(KERN_NOTICE "dev_rel\n");
     kfree(kern_mem);
     kern_mem = NULL;
     return 0;
