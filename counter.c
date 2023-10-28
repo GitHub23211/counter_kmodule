@@ -56,7 +56,6 @@ static int hello_init(void) {
     int alloc_err;
     int cdev_add_err;
 
-
     if(major_num == -1) {
         if((alloc_err = alloc_chrdev_region(&dev, minor_start_num, minor_count, device_name)) != 0) {
             pr_notice("Error %d: Cannot allocate major number...\n", alloc_err);
@@ -77,12 +76,11 @@ static int hello_init(void) {
     devs.cdev.owner = THIS_MODULE;
     devs.cdev.ops = &fops;
     dev_class = class_create(THIS_MODULE, device_name);
+    if((cdev_add_err = cdev_add(&(devs.cdev), dev, minor_count)) < 0) {
+        pr_notice("Error %d adding %s%d\n", cdev_add_err, device_name, MINOR(dev));
+    }
 
     for(int i = 0; i < minor_count; i++) {
-        cdev_add_err = cdev_add(&(devs.cdev), MKDEV(MAJOR(dev), MINOR(dev) + i), 1);
-        if (cdev_add_err) {
-            pr_notice("Error %d adding %s%d\n", cdev_add_err, device_name, MINOR(dev));
-        }
         device_create(dev_class, NULL, MKDEV(MAJOR(dev), MINOR(dev) + i), NULL, "%s%d", device_name, i);
         pr_notice("MAJOR %d, MINOR %d\n", MAJOR(dev), MINOR(dev) + i);
     }
@@ -112,6 +110,7 @@ ssize_t dev_write(struct file* filp, const char __user* buff, size_t count, loff
         pr_notice("Bytes to write: %lu > allocated memory: %d bytes Aborting...\n", count, alloc_mem);
         return -1;
     }
+
     if(copy_from_user(kern_mem, buff, count) != 0) {
         pr_notice("Could not copy data from user space to kernel space");
         return -1;
@@ -178,7 +177,6 @@ static long ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
     }
     return 0;
 }
-
 
 module_init(hello_init);
 module_exit(hello_exit);
