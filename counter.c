@@ -8,7 +8,7 @@
 #include <linux/ioctl.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your name and email address here");
+MODULE_AUTHOR("Joshua Santos, joshua.santos1@students.mq.edu.au");
 MODULE_DESCRIPTION("Comp2291 Counter driver.");
 
 #define uint8_t unsigned char
