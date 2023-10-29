@@ -117,7 +117,7 @@ ssize_t dev_write(struct file* filp, const char __user* buff, size_t count, loff
     }
 
     if((int) (*kern_mem) > modulus) {
-        pr_notice("%s%d: overflow %d > %d\n", device_name, MINOR(dev), res, modulus);
+        pr_notice("%s%d: overflow %d > %d\n", device_name, MINOR(dev), (int) (*kern_mem), modulus);
         return -1;
     }
     res = (int) *kern_mem;
