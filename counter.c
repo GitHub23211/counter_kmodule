@@ -107,7 +107,7 @@ int dev_open(struct inode* inde, struct file* fle) {
 
 ssize_t dev_write(struct file* filp, const char __user* buff, size_t count, loff_t* offp) {
     if(count >= alloc_mem) {
-        pr_notice("Bytes to write: %lu > allocated memory: %d bytes Aborting...\n", count, alloc_mem);
+        pr_notice("Bytes to write: %lu > allocated memory: %d bytes. Aborting...\n", count, alloc_mem);
         return -1;
     }
 
